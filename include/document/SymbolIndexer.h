@@ -62,8 +62,11 @@ public:
     // Index for inlay hints
     void handle(const slang::ast::CallExpression& sym);
 
-    // Need to unwrap enum transparent members.
-    void handle(const slang::ast::TransparentMemberSymbol& sym);
+    // Anonymous types (no typedef)
+    void handle(const slang::ast::TransparentMemberSymbol& sym) { sym.wrapped.visit(*this); }
+
+    // Special case for enum values, since name may not map
+    void handle(const slang::ast::EnumValueSymbol& sym);
 
     /// Generic symbol handler with dispatch to specialized handlers
     template<typename T>
@@ -73,7 +76,10 @@ public:
             syntex[astNode.getSyntax()] = &astNode;
         }
 
-        if constexpr (std::is_base_of_v<slang::ast::ValueSymbol, T>) {
+        if constexpr (std::is_same_v<slang::ast::InstanceSymbol, T>) {
+            handle(static_cast<const slang::ast::InstanceSymbol&>(astNode));
+        }
+        else if constexpr (std::is_base_of_v<slang::ast::ValueSymbol, T>) {
             handle(static_cast<const slang::ast::ValueSymbol&>(astNode));
         }
 
@@ -89,7 +95,7 @@ public:
 
         // Recurse for symbols other than top level symbols
         if constexpr (std::is_same_v<slang::ast::PackageSymbol, T>) {
-            if (astNode.getSyntax()->sourceRange().start().buffer() != m_buffer) {
+            if (astNode.location.buffer() != m_buffer) {
                 return;
             }
         }
@@ -97,7 +103,8 @@ public:
         // unwrap enum type members to mark enum values
         if constexpr (std::is_same_v<slang::ast::TypeAliasType, T>) {
             auto& unwrapped = astNode.getCanonicalType();
-            if (unwrapped.kind != slang::ast::SymbolKind::ErrorType) {
+            if (unwrapped.kind != slang::ast::SymbolKind::ErrorType &&
+                unwrapped.location.buffer() == m_buffer) {
                 unwrapped.visit(*this);
             }
         }
