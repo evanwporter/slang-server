@@ -23,5 +23,12 @@
   "[typescript]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true,
+  },
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build/win64-debug",
+  ],
 }
