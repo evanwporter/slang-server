@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <utility>
+#include <string_view>
 
 // Pattern from RFC 3986
 // https://www.rfc-editor.org/rfc/rfc3986#appendix-B

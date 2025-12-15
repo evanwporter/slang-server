@@ -1,0 +1,46 @@
+Given
+/**
+JANA
+ */
+
+Expect
+JANA
+
+
+/**
+//JANA
+ */
+
+//JANA
+
+
+/***
+//JANA
+ */
+
+* /JANA
+
+
+/**
+//JAG//A
+ */
+
+//JAG//A
+
+
+/*
+//J/*G//A
+ */
+
+//J/*G//A
+
+/*
+* /G//A
+   */
+
+/G//A
+
+
+//        G
+
+G
