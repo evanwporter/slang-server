@@ -121,6 +121,7 @@ export abstract class HierItem implements HasChildren {
 
   async getTreeItem(): Promise<TreeItem> {
     let item = new TreeItem(this.inst.instName)
+    item.id = `hierarchy:${this.inst.kind}:${this.getPath()}`
     item.iconPath = new vscode.ThemeIcon('chip')
     return item
   }
@@ -197,6 +198,7 @@ class ScopeItem extends HierItem {
 
   async getTreeItem(): Promise<TreeItem> {
     let item = new TreeItem(this.inst.instName)
+    item.id = `hierarchy:scope:${this.getPath()}`
     item.iconPath = new vscode.ThemeIcon('symbol-namespace')
     return item
   }
@@ -220,6 +222,7 @@ export class InstanceItem extends HierItem {
   async getTreeItem(): Promise<vscode.TreeItem> {
     let item = await super.getTreeItem()
     item.contextValue = 'Module'
+    item.id = `hierarchy:instance:${this.getPath()}`
     item.iconPath = new vscode.ThemeIcon('chip')
     item.description = this.inst.declName
     return item
@@ -1377,7 +1380,7 @@ export class ProjectComponent
     item.command = {
       title: 'Go to definition',
       command: 'slang.project.setInstance',
-      arguments: [element, { revealHierarchy: false, revealFile: true, revealInstance: true }],
+      arguments: [element, { revealHierarchy: false, revealFile: true, revealInstance: false }],
     }
 
     return item
