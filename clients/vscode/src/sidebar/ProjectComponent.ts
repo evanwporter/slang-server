@@ -1377,7 +1377,7 @@ export class ProjectComponent
     item.command = {
       title: 'Go to definition',
       command: 'slang.project.setInstance',
-      arguments: [element, { revealHierarchy: false, revealFile: true, revealInstance: true }],
+      arguments: [element, { revealHierarchy: false, revealFile: true, revealInstance: false }],
     }
 
     return item
