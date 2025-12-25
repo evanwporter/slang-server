@@ -678,9 +678,6 @@ export class PathConfigObject extends ConfigObject<string> {
       default: '',
     })
     this.platformDefaults = platformDefaults
-    this.onConfigUpdated(async () => {
-      await this.checkPathNotify()
-    })
   }
 
   compile(nodeName: string, parentNode?: ExtensionComponent | undefined): void {
