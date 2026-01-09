@@ -17,10 +17,12 @@
 #include <string_view>
 #include <vector>
 
+#include "slang/analysis/AnalysisManager.h"
 #include "slang/ast/ASTContext.h"
 #include "slang/ast/Compilation.h"
 #include "slang/ast/Lookup.h"
 #include "slang/ast/Symbol.h"
+#include "slang/diagnostics/Diagnostics.h"
 #include "slang/parsing/Token.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxNode.h"
@@ -90,9 +92,9 @@ public:
         return syntaxes.getWordTokenAt(loc);
     }
 
-    /// @brief Gets the AST symbol at a specific source location
-    /// @param loc The source location to query
-    /// @return Pointer to the referenced symbol, or nullptr if not found
+    // @brief Gets the AST symbol at a specific source location
+    // @param loc The source location to query
+    // @return *Pointer* to the referenced symbol, or nullptr if not found
     const slang::ast::Symbol* getSymbolAt(slang::SourceLocation loc) const;
 
     /// @brief Gets the AST scope at a specific source location
@@ -136,17 +138,17 @@ public:
     std::vector<lsp::InlayHint> getInlayHints(lsp::Range range,
                                               const struct Config::InlayHints& config);
 
+    /// @brief Finds all references to a symbol in this document and adds them to the vector
+    /// @param references Vector to append references to
+    /// @param targetLocation The source location of the target symbol
+    /// @param targetName The name of the symbol to match
     void addLocalReferences(std::vector<lsp::Location>& references,
                             slang::SourceLocation targetLocation,
                             std::string_view targetName) const;
 
-    /// @brief Finds all references to a symbol in this document and adds them to the vector
-    /// @param references Vector to append references to
-    /// @param targetSymbol The symbol to find references to
-    /// @param targetName The name of the symbol to match
-    void addLocalReferences(std::vector<lsp::Location>& references,
-                            const slang::ast::Symbol* targetSymbol,
-                            std::string_view targetName) const;
+    /// @brief Runs analysis on the shallow compilation and returns diagnostics
+    /// @return The analysis diagnostics (owned by internal AnalysisManager)
+    Diagnostics getAnalysisDiags();
 
 private:
     /// Reference to the source manager. Not const because we may need to parse macro args.
@@ -163,6 +165,9 @@ private:
 
     /// Compilation context for symbol resolution
     std::unique_ptr<slang::ast::Compilation> m_compilation;
+
+    /// Analysis manager for running driver and unused checks
+    slang::analysis::AnalysisManager m_analysisManager;
 
     /// Symbol tree visitor for /documentSymbols
     /// Currently this is relies on syntax, but we should switch it to use the shallow compilation

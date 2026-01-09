@@ -87,7 +87,6 @@ TEST_CASE("AllGenerateBranches") {
         endmodule
         )");
     auto diags = doc.getDiagnostics();
-    CHECK(diags.size() == 6);
     golden.record(diags);
 }
 
@@ -98,4 +97,25 @@ TEST_CASE("NoParamTop") {
 
     JsonGoldenTest golden;
     golden.record(hdl.getDiagnostics());
+}
+
+TEST_CASE("PartialElaboration") {
+    ServerHarness server;
+
+    JsonGoldenTest golden;
+
+    // Check that we can reason about diagnostics without having to fully elaborate
+    auto doc = server.openFile("test.sv", R"(
+        module x #(
+            parameter int x = 1,
+            parameter int y = 2,
+            parameter int z
+        );
+            $static_assert(y == x);
+        endmodule
+
+
+        )");
+    auto diags = doc.getDiagnostics();
+    golden.record(diags);
 }

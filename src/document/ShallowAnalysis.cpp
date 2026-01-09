@@ -12,10 +12,13 @@
 #include "lsp/LspTypes.h"
 #include "util/Converters.h"
 #include "util/Logging.h"
+#include "util/SlangExtensions.h"
 #include <fmt/format.h>
 #include <memory>
 #include <string_view>
 
+#include "slang/analysis/AnalysisManager.h"
+#include "slang/analysis/AnalysisOptions.h"
 #include "slang/ast/ASTContext.h"
 #include "slang/ast/Compilation.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
@@ -35,11 +38,30 @@
 #include "slang/util/Util.h"
 namespace server {
 using namespace slang;
+
+// Helper to check if two symbols represent the same semantic entity.
+// After normalization in getSymbolAtToken, most symbols should have pointer equality.
+// This fallback handles edge cases where different instance bodies create different
+// symbol objects for the same source-level declaration (e.g., parameters).
+static bool symbolsMatch(const ast::Symbol* a, const ast::Symbol* b) {
+    if (!a || !b) {
+        return false;
+    }
+    if (a == b) {
+        return true;
+    }
+    // Match by location as a fallback
+    if (a->location == b->location) {
+        return true;
+    }
+    return false;
+}
 ShallowAnalysis::ShallowAnalysis(SourceManager& sourceManager, slang::BufferID buffer,
                                  std::shared_ptr<SyntaxTree> tree, slang::Bag options,
                                  const std::vector<std::shared_ptr<SyntaxTree>>& allTrees) :
     syntaxes(*tree), m_sourceManager(sourceManager), m_buffer(buffer), m_tree(tree),
-    m_allTrees(allTrees), m_symbolTreeVisitor(m_sourceManager), m_symbolIndexer(buffer) {
+    m_allTrees(allTrees), m_analysisManager(options.getOrDefault<analysis::AnalysisOptions>()),
+    m_symbolTreeVisitor(m_sourceManager), m_symbolIndexer(buffer) {
 
     if (!m_tree) {
         ERROR("DocumentAnalysis initialized with null syntax tree");
@@ -63,7 +85,7 @@ ShallowAnalysis::ShallowAnalysis(SourceManager& sourceManager, slang::BufferID b
     // Set up options for shallow compilation
     auto cOptions = options.getOrDefault<ast::CompilationOptions>();
     cOptions.flags |= ast::CompilationFlags::AllowTopLevelIfacePorts;
-    cOptions.flags |= ast::CompilationFlags::AllGenerateBranches;
+    cOptions.flags |= ast::CompilationFlags::UntakenGenerateChecks;
     cOptions.flags |= ast::CompilationFlags::AllowInvalidTop;
 
     // Add definitions from this tree (even if they aren't valid tops)
@@ -300,6 +322,15 @@ const ast::Symbol* ShallowAnalysis::getSymbolAtToken(const parsing::Token* declT
                 // Module declarations get indexed to their body. We do want to keep the body
                 // as the indexed sym for use in the future though with hdl features.
                 return &sym->as<ast::InstanceBodySymbol>().getDefinition();
+            case ast::SymbolKind::Port: {
+                // Named port connections get indexed to the port symbol. Return the internal
+                // symbol so that references work across instance boundaries.
+                auto& port = sym->as<ast::PortSymbol>();
+                if (port.internalSymbol) {
+                    return port.internalSymbol;
+                }
+                return sym;
+            }
             default:
                 return sym;
         }
@@ -458,33 +489,7 @@ void ShallowAnalysis::addLocalReferences(std::vector<lsp::Location>& references,
         }
 
         const ast::Symbol* tokenSymbol = getSymbolAtToken(token);
-        if (tokenSymbol != targetSymbol) {
-            continue;
-        }
-
-        references.push_back(lsp::Location{
-            .uri = URI::fromFile(path),
-            .range = toRange(token->range(), m_sourceManager),
-        });
-    }
-}
-
-void ShallowAnalysis::addLocalReferences(std::vector<lsp::Location>& references,
-                                         const ast::Symbol* targetSymbol,
-                                         std::string_view targetName) const {
-
-    auto path = m_sourceManager.getFullPath(m_buffer);
-
-    // Iterate through all tokens in the document
-    for (const auto* token : syntaxes.collected) {
-        // Check if token name matches
-        if (token->kind != parsing::TokenKind::Identifier || token->valueText() != targetName) {
-            continue;
-        }
-
-        // Check if token refers to the same symbol
-        const ast::Symbol* tokenSymbol = getSymbolAtToken(token);
-        if (tokenSymbol != targetSymbol) {
+        if (!symbolsMatch(tokenSymbol, targetSymbol)) {
             continue;
         }
 
@@ -512,10 +517,8 @@ std::vector<lsp::DocumentLink> ShallowAnalysis::getDocLinks() const {
 
 bool ShallowAnalysis::hasValidBuffers() {
     for (auto& tree : m_allTrees) {
-        for (auto& buffer : tree->getSourceBufferIds()) {
-            if (!m_sourceManager.isValid(buffer)) {
-                return false;
-            }
+        if (!server::hasValidBuffers(m_sourceManager, tree)) {
+            return false;
         }
     }
     return true;
@@ -553,6 +556,18 @@ std::string ShallowAnalysis::getDebugHover(const parsing::Token& tok) const {
         }
     }
     return value;
+}
+
+Diagnostics ShallowAnalysis::getAnalysisDiags() {
+    if (!m_compilation || m_compilation->getRoot().topInstances.empty()) {
+        return {};
+    }
+
+    m_compilation->freeze();
+    m_analysisManager.analyze(*m_compilation);
+    m_compilation->unfreeze();
+
+    return m_analysisManager.getDiagnostics();
 }
 
 } // namespace server
