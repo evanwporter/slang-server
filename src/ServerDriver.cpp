@@ -973,15 +973,23 @@ std::optional<lsp::Hover> ServerDriver::getDocHover(const URI& uri, const lsp::P
 
 namespace {
 
+/// In an array of instances (modules) this recursively moves down the list and grabs the first
+/// valid instance. Because arrays are homogenous, we only need to look at the first element.
 const ast::InstanceSymbol* getFirstInstance(const ast::InstanceArraySymbol& array) {
-    for (const auto* element : array.elements) {
-        if (auto* instance = element->as_if<ast::InstanceSymbol>())
+    const ast::Symbol* element = array.elements.empty() ? nullptr : array.elements[0];
+
+    while (element) {
+        const auto* instance = element->as_if<ast::InstanceSymbol>();
+        if (instance)
             return instance;
-        if (auto* nestedArray = element->as_if<ast::InstanceArraySymbol>()) {
-            if (auto* instance = getFirstInstance(*nestedArray))
-                return instance;
-        }
+
+        const auto* nestedArray = element->as_if<ast::InstanceArraySymbol>();
+        if (!nestedArray || nestedArray->elements.empty())
+            return nullptr;
+
+        element = nestedArray->elements[0];
     }
+
     return nullptr;
 }
 
@@ -1042,12 +1050,12 @@ std::vector<lsp::LocationLink> ServerDriver::getDocTypeDefinition(const URI& uri
 
     // Instances have no declared data type. Their type definition is module / interface /
     // program definition they instantiate.
-    if (auto* instance = symbol->as_if<ast::InstanceSymbol>()) {
+    if (const auto* instance = symbol->as_if<ast::InstanceSymbol>()) {
         const auto& definition = instance->getDefinition();
         return makeLink(definition.location, definition.name.size());
     }
-    if (auto* array = symbol->as_if<ast::InstanceArraySymbol>()) {
-        if (auto* instance = getFirstInstance(*array)) {
+    if (const auto* array = symbol->as_if<ast::InstanceArraySymbol>()) {
+        if (const auto* instance = getFirstInstance(*array)) {
             const auto& definition = instance->getDefinition();
             return makeLink(definition.location, definition.name.size());
         }
