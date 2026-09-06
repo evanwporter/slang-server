@@ -115,12 +115,6 @@ public:
     /// @return Vector of location links to definitions
     std::vector<lsp::LocationLink> getDocDefinition(const URI& uri, const lsp::Position& position);
 
-    /// @brief Gets LSP definition links for a position in a document
-    /// @param uri The URI of the document
-    /// @param position The LSP position to query
-    /// @return Vector of location links to definitions
-    std::vector<lsp::LocationLink> getDocDefinition(const URI& uri, const lsp::Position& position);
-
     /// @brief Gets LSP type definition links for a symbol at a position
     std::vector<lsp::LocationLink> getDocTypeDefinition(const URI& uri,
                                                         const lsp::Position& position);

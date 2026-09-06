@@ -973,6 +973,18 @@ std::optional<lsp::Hover> ServerDriver::getDocHover(const URI& uri, const lsp::P
 
 namespace {
 
+const ast::InstanceSymbol* getFirstInstance(const ast::InstanceArraySymbol& array) {
+    for (const auto* element : array.elements) {
+        if (auto* instance = element->as_if<ast::InstanceSymbol>())
+            return instance;
+        if (auto* nestedArray = element->as_if<ast::InstanceArraySymbol>()) {
+            if (auto* instance = getFirstInstance(*nestedArray))
+                return instance;
+        }
+    }
+    return nullptr;
+}
+
 /// Given a type it checks if the type is an array and if so it unwraps it.
 /// The loop is for recusively unwrapping nested arrays.
 /// If the type is not an array then it returns the type
@@ -1012,33 +1024,57 @@ std::vector<lsp::LocationLink> ServerDriver::getDocTypeDefinition(const URI& uri
     if (!info || !info->symbol())
         return {};
 
-    const auto* declaredType = info->symbol()->getDeclaredType();
+    const auto* symbol = info->symbol();
+
+    auto makeLink = [&](SourceLocation location, size_t length) {
+        const auto range = toRange(SourceRange(location, location + length), sm);
+        return std::vector<lsp::LocationLink>{lsp::LocationLink{
+            .targetUri = URI::fromFile(sm.getFullPath(location.buffer())),
+            .targetRange = range,
+            .targetSelectionRange = range,
+        }};
+    };
+
+    // A typedef names its own type. Preserve goto-definition behavior instead of following
+    // through its declared type (for example, `typedef some_t[$] other_t`).
+    if (ast::TypeAliasType::isKind(symbol->kind))
+        return makeLink(symbol->location, symbol->name.size());
+
+    // Instances have no declared data type. Their type definition is module / interface /
+    // program definition they instantiate.
+    if (auto* instance = symbol->as_if<ast::InstanceSymbol>()) {
+        const auto& definition = instance->getDefinition();
+        return makeLink(definition.location, definition.name.size());
+    }
+    if (auto* array = symbol->as_if<ast::InstanceArraySymbol>()) {
+        if (auto* instance = getFirstInstance(*array)) {
+            const auto& definition = instance->getDefinition();
+            return makeLink(definition.location, definition.name.size());
+        }
+        return {};
+    }
+
+    const auto* declaredType = symbol->getDeclaredType();
     if (!declaredType)
         return {};
 
-    // If its an array then we grab the underlying type
-    // ie: type_t thing[2]
-    // would return type_t as the underlying type
+    // Strip declaration dimensions to reach named element type.
     const auto* typeDefinition = unwrapArrayType(&declaredType->getType());
-
-    if (!typeDefinition || typeDefinition->name.empty() || !typeDefinition->location)
+    if (!typeDefinition || !typeDefinition->location)
         return {};
 
-    // Only typedef and classes are valid destinations
-    if (!ast::TypeAliasType::isKind(typeDefinition->kind) &&
-        !ast::ClassType::isKind(typeDefinition->kind))
-        return {};
+    if (ast::TypeAliasType::isKind(typeDefinition->kind) ||
+        ast::ClassType::isKind(typeDefinition->kind)) {
+        if (typeDefinition->name.empty())
+            return {};
+        return makeLink(typeDefinition->location, typeDefinition->name.size());
+    }
 
-    // Get the range in the code that the type name is defined at
-    const auto range = toRange(SourceRange(typeDefinition->location,
-                                           typeDefinition->location + typeDefinition->name.size()),
-                               sm);
+    // Anonymous enum types have no name; location points at `enum` keyword.
+    if (ast::EnumType::isKind(typeDefinition->kind))
+        return makeLink(typeDefinition->location, std::string_view("enum").size());
 
-    // There can't be more than one type returned
-    return {lsp::LocationLink{.targetUri = URI::fromFile(
-                                  sm.getFullPath(typeDefinition->location.buffer())),
-                              .targetRange = range,
-                              .targetSelectionRange = range}};
+    return {};
 }
 
 std::optional<std::vector<lsp::DocumentHighlight>> ServerDriver::getDocDocumentHighlight(
